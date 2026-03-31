@@ -18,12 +18,6 @@ GVM_PORT = 9390
 GVM_USER = os.getenv("GVM_USER", "admin")
 GVM_PASS = os.getenv("GVM_PASS", "admin123")
 
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "mainpublictenders@gmail.com"
-SMTP_PASS = "xbzm urdr xswq priy" 
-EMAIL_RECEIVER = "Diabolina208@wp.pl"
-
 REPORT_FORMAT_PDF = "5057e5f8-66d9-11e1-9e5e-406186ea4fc5"
 LAST_SCANS = {}
 
