@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  # 1. Główny silnik OpenVAS (Greenbone)
+  openvas-master:
+    image: immauss/openvas:latest
+    container_name: openvas-master
+    privileged: true
+    network_mode: host # Wymagane dla pełnej funkcjonalności skanera
+    restart: unless-stopped
+    volumes:
+      - gvm_data:/data
+    environment:
+      - PASSWORD=admin123 # Hasło dla użytkownika admin w GVM
+
+  # 2. Serwer SSH (Tunele dla sensorów)
+  tunnel-server:
+    image: linuxserver/openssh-server:latest
+    container_name: tunnel-server
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=scanner_user
+      - PASSWORD_ACCESS=false
+      - SUDO_ACCESS=false
+    ports:
+      - "2222:2222"
+    volumes:
+      - ./remote_keys:/config/.ssh # Klucze muszą trafić do .ssh dla authorized_keys
+    restart: unless-stopped
+
+  # 3. API Rejestrujące (Dodaje skanery i aktualizuje config)
+  registrar:
+    build: ./registrar
+    container_name: registrar
+    network_mode: host
+    environment:
+      - GVM_USER=admin
+      - GVM_PASS=admin123git
+    volumes:
+      - ./remote_keys:/remote_keys
+      - ./shared_config/config.yaml:/app/config.yaml # Współdzielony plik konfiguracji
+      - ./shared_config/ports.txt:/app/ports.txt
+    depends_on:
+      - openvas-master
+
+  # 4. Orchestrator (Demon wysyłający raporty)
+  orchestrator:
+    build: ./orchestrator
+    container_name: orchestrator
+    network_mode: host
+    environment:
+      - GVM_USER=admin
+      - GVM_PASS=admin123
+    volumes:
+      - ./orchestrator/reports:/app/reports
+      - ./shared_config/config.yaml:/app/config.yaml
+    restart: unless-stopped
+    depends_on:
+      - registrar
+
+volumes:
+  gvm_data:
