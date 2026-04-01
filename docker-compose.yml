@@ -9,7 +9,7 @@ services:
     network_mode: host # Wymagane dla pełnej funkcjonalności skanera
     restart: unless-stopped
     volumes:
-      - gvm_data:/data
+      - openvas_data:/data
     environment:
       - PASSWORD=admin123 # Hasło dla użytkownika admin w GVM
 
@@ -60,4 +60,5 @@ services:
       - registrar
 
 volumes:
-  gvm_data:
+  openvas_data:
+    external: true
