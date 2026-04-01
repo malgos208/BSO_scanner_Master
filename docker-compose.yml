@@ -4,7 +4,7 @@ services:
     image: immauss/openvas:latest
     container_name: openvas-master
     privileged: true
-    # network_mode: host # Wymagane dla pełnej funkcjonalności skanera
+    network_mode: host # Wymagane dla pełnej funkcjonalności skanera
     restart: unless-stopped
     volumes:
       - openvas_data:/data
@@ -31,11 +31,11 @@ services:
   registrar:
     build: ./registrar
     container_name: registrar
-    # network_mode: host
+    network_mode: host
     environment:
       - GVM_USER=admin
       - GVM_PASS=admin123
-      - GVM_HOST=openvas-master  # Adres wewnątrz sieci dockera
+      - GVM_HOST=127.0.0.1
     ports:
       - "5000:5000" # Port API rejestratora
     volumes:
@@ -53,7 +53,7 @@ services:
     environment:
       - GVM_USER=admin
       - GVM_PASS=admin123
-      - GVM_HOST=openvas-master
+      - GVM_HOST=127.0.0.1
     volumes:
       - ./orchestrator/reports:/app/reports
       - ./shared_config:/app/config
