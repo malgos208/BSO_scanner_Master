@@ -1,12 +1,10 @@
-version: '3.8'
-
 services:
   # 1. Główny silnik OpenVAS (Greenbone)
   openvas-master:
     image: immauss/openvas:latest
     container_name: openvas-master
     privileged: true
-    network_mode: host # Wymagane dla pełnej funkcjonalności skanera
+    # network_mode: host # Wymagane dla pełnej funkcjonalności skanera
     restart: unless-stopped
     volumes:
       - openvas_data:/data
@@ -22,7 +20,7 @@ services:
       - PGID=1000
       - USER_NAME=scanner_user
       - PASSWORD_ACCESS=false
-      - SUDO_ACCESS=false
+      # - SUDO_ACCESS=false
     ports:
       - "2222:2222"
     volumes:
@@ -33,14 +31,16 @@ services:
   registrar:
     build: ./registrar
     container_name: registrar
-    network_mode: host
+    # network_mode: host
     environment:
       - GVM_USER=admin
-      - GVM_PASS=admin123git
+      - GVM_PASS=admin123
+      - GVM_HOST=openvas-master  # Adres wewnątrz sieci dockera
+    ports:
+      - "5000:5000" # Port API rejestratora
     volumes:
       - ./remote_keys:/remote_keys
-      - ./shared_config/config.yaml:/app/config.yaml # Współdzielony plik konfiguracji
-      - ./shared_config/ports.txt:/app/ports.txt
+      - ./shared_config:/app/config
     depends_on:
       - openvas-master
 
@@ -52,9 +52,10 @@ services:
     environment:
       - GVM_USER=admin
       - GVM_PASS=admin123
+      - GVM_HOST=openvas-master
     volumes:
       - ./orchestrator/reports:/app/reports
-      - ./shared_config/config.yaml:/app/config.yaml
+      - ./shared_config:/app/config
     restart: unless-stopped
     depends_on:
       - registrar
