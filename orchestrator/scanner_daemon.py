@@ -18,13 +18,16 @@ GVM_PORT = 9390
 GVM_USER = os.getenv("GVM_USER", "admin")
 GVM_PASS = os.getenv("GVM_PASS", "admin123")
 
+SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"
+CONFIG_ID = "daba56c8-73ec-11df-a475-002264764cea"
+
 REPORT_FORMAT_PDF = "5057e5f8-66d9-11e1-9e5e-406186ea4fc5"
 LAST_SCANS = {}
 
 def get_target_from_config(customer_name):
     try:
         with open("config.yaml", "r") as f:
-            config = yaml.safe_load(f)
+            config = yaml.safe_load(f) or {}
             return config.get(customer_name)
     except Exception as e:
         print(f"❌ Błąd odczytu config.yaml: {e}")
@@ -58,64 +61,87 @@ def send_email_with_report(customer_name, file_path):
         print(f"❌ Błąd e-mail: {e}")
 
 def run_customer_scan(gmp, customer_name, target_range):
-    # 1. Znajdź skaner
-    scanner_id = None
-    for s in gmp.get_scanners().findall("scanner"):
-        if f"Scanner_{customer_name}" in (s.find("name").text or ""):
-            scanner_id = s.get("id")
-            break
-    
-    if not scanner_id:
-        return
 
-    print(f"🚀 Uruchamiam skan dla {customer_name} na zasięgu {target_range}")
-    target_id = gmp.create_target(name=f"Tgt_{customer_name}", hosts=[target_range])['id']
-    task_id = gmp.create_task(name=f"Scan_{customer_name}", 
-                              config_id="daba56c8-73ec-11df-a475-002264764cea", 
-                              target_id=target_id, 
-                              scanner_id=scanner_id)['id']
+    print(f"🚀 Scan: {customer_name} -> {target_range}")
+
+    target_id = gmp.create_target(
+        name=f"Target_{customer_name}",
+        hosts=target_range
+    )["id"]
+
+    task_id = gmp.create_task(
+        name=f"Task_{customer_name}",
+        config_id=CONFIG_ID,
+        target_id=target_id,
+        scanner_id=SCANNER_ID
+    )["id"]
 
     gmp.start_task(task_id)
-    
+
+    # wait for completion
     while True:
-        status = gmp.get_task(task_id).find("task/status").text
-        if status in ("Done", "Stopped", "Error"):
+        task = gmp.get_task(task_id)
+        status = task.find("task/status").text
+
+        if status in ["Done", "Stopped", "Error"]:
             break
+
         time.sleep(30)
 
-    report_id = gmp.get_task(task_id).find("task/last_report/report").get("id")
+    report = gmp.get_task(task_id).find("task/last_report/report")
+    if report is None:
+        return
+
+    report_id = report.get("id")
+
     if report_id:
-        response = gmp.get_report(report_id=report_id, report_format_id=REPORT_FORMAT_PDF, ignore_pagination=True)
+        response = gmp.get_report(
+            report_id=report_id,
+            report_format_id=REPORT_FORMAT_PDF,
+            ignore_pagination=True
+        )
+
         content = response.find("report").text
+
         file_name = f"/app/reports/Raport_{customer_name}.pdf"
         with open(file_name, "wb") as f:
             f.write(base64.b64decode(content))
-        send_email_with_report(customer_name, file_name)
+
+        print(f"📄 Report saved: {file_name}")
+
 
 def run_daemon():
-    print("🤖 Demon uruchomiony...")
+    print("🤖 GVM daemon started")
+
     while True:
         try:
             connection = TLSConnection(hostname=GVM_HOST, port=GVM_PORT)
+
             with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
                 gmp.authenticate(GVM_USER, GVM_PASS)
-                
-                for s in gmp.get_scanners().findall("scanner"):
-                    s_name = s.find("name").text
-                    s_id = s.get("id")
 
-                    if s_name.startswith("Scanner_"):
-                        client_name = s_name.replace("Scanner_", "")
-                        last_time = LAST_SCANS.get(s_id)
-                        
-                        if last_time is None or datetime.now() - last_time > timedelta(hours=24):
-                            target_range = get_target_from_config(client_name)
+                scanners = gmp.get_scanners()
+
+                for s in scanners.findall("scanner"):
+                    name = s.find("name").text
+
+                    if name and name.startswith("Scanner_"):
+                        client = name.replace("Scanner_", "")
+                        scanner_id = s.get("id")
+
+                        last = LAST_SCANS.get(scanner_id)
+
+                        if not last or datetime.now() - last > timedelta(hours=24):
+
+                            target_range = get_target_from_config(client)
+
                             if target_range:
-                                run_customer_scan(gmp, client_name, target_range)
-                                LAST_SCANS[s_id] = datetime.now()
+                                run_customer_scan(gmp, client, target_range)
+                                LAST_SCANS[scanner_id] = datetime.now()
+
         except Exception as e:
-            print(f"⚠️ Czekam na GVM... ({e})")
-        
+            print(f"⚠️ GVM not ready: {e}")
+
         time.sleep(300)
 
 if __name__ == "__main__":

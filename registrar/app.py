@@ -10,6 +10,12 @@ app = Flask(__name__)
 PORT_FILE = "/app/ports.txt"
 CONFIG_FILE = "/app/config.yaml"
 
+GVM_HOST = "127.0.0.1"
+GVM_PORT = 9390
+
+SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"  # OpenVAS Default
+CONFIG_ID = "daba56c8-73ec-11df-a475-002264764cea"   # Full and Fast
+
 def get_next_port():
     default_port = 9001
     if not os.path.exists(PORT_FILE):
@@ -47,32 +53,33 @@ def register():
         if os.path.exists(CONFIG_FILE):
             with open(CONFIG_FILE, "r") as f:
                 config = yaml.safe_load(f) or {}
+
         config[name] = ip_range
+
         with open(CONFIG_FILE, "w") as f:
             yaml.dump(config, f)
 
-        # 4. Połączenie z GVM i rejestracja skanera
-        # Jeśli używasz network_mode: host, GVM jest na 127.0.0.1
-        gvm_host = "127.0.0.1"
-        connection = TLSConnection(hostname=gvm_host, port=9390)
-        
+        # GVM connection
+        connection = TLSConnection(hostname=GVM_HOST, port=GVM_PORT)
+
         with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
-            gmp.authenticate(os.getenv("GVM_USER"), os.getenv("GVM_PASS"))
-            
-            # Rejestracja skanera OSP (typ 2)
-            gmp.create_scanner(
-                name=f"Scanner_{name}",
-                host="127.0.0.1",
-                port=port,
-                type=2,
-                credential_id=""
+            gmp.authenticate(
+                os.getenv("GVM_USER", "admin"),
+                os.getenv("GVM_PASS", "admin123")
             )
-            
-        return jsonify({"port": port, "status": "success"})
+
+            # test connection
+            gmp.get_scanners()
+
+        return jsonify({
+            "status": "success",
+            "port": port,
+            "scanner_id": SCANNER_ID
+        })
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == '__main__':
-    # Ważne: Flask musi słuchać na 0.0.0.0 wewnątrz kontenera
+    # Flask musi słuchać na 0.0.0.0 wewnątrz kontenera
     app.run(host='0.0.0.0', port=5000)
