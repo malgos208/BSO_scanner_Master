@@ -5,8 +5,22 @@ from gvm.protocols.gmp import Gmp
 from gvm.transforms import EtreeCheckCommandTransform
 
 app = Flask(__name__)
-PORT_FILE = "/app/config/ports.txt"
-CONFIG_FILE = "/app/config/config.yaml"
+PORT_FILE = "/app/ports.txt"
+CONFIG_FILE = "/app/config.yaml"
+
+def get_next_port():
+    default_port = 9001
+    if not os.path.exists(PORT_FILE):
+        return default_port
+    
+    try:
+        with open(PORT_FILE, "r") as f:
+            content = f.read().strip()
+            if not content: # Jeśli plik jest pusty
+                return default_port
+            return int(content) + 1
+    except ValueError:
+        return default_port
 
 @app.route('/register', methods=['POST'])
 def register():
@@ -16,10 +30,10 @@ def register():
     ip_range = data.get('ip_range', '127.0.0.1/32')
 
     # 1. Przydziel port (logika inkrementacji)
-    port = 9001
-    if os.path.exists(PORT_FILE):
-        with open(PORT_FILE, "r") as f: port = int(f.read()) + 1
-    with open(PORT_FILE, "w") as f: f.write(str(port))
+    port = port = get_next_port()
+    
+    with open(PORT_FILE, "w") as f:
+        f.write(str(port))
 
     # 2. DOPISANIE klucza do authorized_keys dla tunnel-server
     # W tunnel-server wolumen montujemy do /config/.ssh, więc tu ścieżka musi pasować

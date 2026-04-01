@@ -40,7 +40,8 @@ services:
       - "5000:5000" # Port API rejestratora
     volumes:
       - ./remote_keys:/remote_keys
-      - ./shared_config:/app/config
+      - ./shared_config/config.yaml:/app/config.yaml
+      - ./shared_config/ports.txt:/app/ports.txt
     depends_on:
       - openvas-master
 
