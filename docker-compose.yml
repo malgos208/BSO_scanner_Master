@@ -21,8 +21,8 @@ services:
       - USER_NAME=scanner_user
       - PASSWORD_ACCESS=false
       # - SUDO_ACCESS=false
-    ports:
-      - "2222:2222"
+    # ports:
+    #   - "2222:2222"
     volumes:
       - ./remote_keys:/config/.ssh # Klucze muszą trafić do .ssh dla authorized_keys
     restart: unless-stopped
