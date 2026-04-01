@@ -47,7 +47,7 @@ services:
   # 4. Orchestrator (Demon wysyłający raporty)
   orchestrator:
     build: ./orchestrator
-    container_name: orchestrator
+    container_name: scan-orchestrator
     network_mode: host
     environment:
       - GVM_USER=admin

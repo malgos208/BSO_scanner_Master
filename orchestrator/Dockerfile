@@ -15,8 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 # Kopiujemy skrypt demona
 COPY scanner_daemon.py .
-# Kopiujemy plik konfiguracyjny (można też podmontować jako wolumen)
-COPY config.yaml .
 
 # Folder na raporty przed wysyłką
 RUN mkdir /app/reports
