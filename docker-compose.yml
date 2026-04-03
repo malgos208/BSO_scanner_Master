@@ -15,16 +15,22 @@ services:
   tunnel-server:
     image: linuxserver/openssh-server:latest
     container_name: tunnel-server
+    network_mode: host
     environment:
       - PUID=1000
       - PGID=1000
       - USER_NAME=scanner_user
       - PASSWORD_ACCESS=false
-      # - SUDO_ACCESS=false
-    # ports:
-    #   - "2222:2222"
+      - SUDO_ACCESS=false
+      - LISTEN_PORT=2222
+#      - PUBLIC_KEY_FILE=/config/authorized_keys
+      - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel
+#    ports:
+#      - "2222:2222"
     volumes:
-      - ./remote_keys:/config/.ssh # Klucze muszą trafić do .ssh dla authorized_keys
+    # tylko klucz, NIE cały .ssh
+#      - ./remote_keys/authorized_keys:/config/authorized_keys
+       - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
     restart: unless-stopped
 
   # 3. API Rejestrujące (Dodaje skanery i aktualizuje config)
@@ -39,7 +45,8 @@ services:
     ports:
       - "5000:5000" # Port API rejestratora
     volumes:
-      - ./remote_keys:/remote_keys
+      - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
+#      - ./remote_keys/authorized_keys:/config/authorized_keys
       - ./shared_config/config.yaml:/app/config.yaml
       - ./shared_config/ports.txt:/app/ports.txt
     depends_on:

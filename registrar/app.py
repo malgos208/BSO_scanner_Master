@@ -41,8 +41,16 @@ def register():
         port = get_next_port()
 
         # 1. Zapisz klucz dla tunnel-server
-        with open("/remote_keys/authorized_keys", "a") as f:
-            f.write(f"\n{pub_key}")
+        AUTHORIZED_KEYS = "/config/.ssh/authorized_keys"
+        existing_keys = []
+
+        if os.path.exists(AUTHORIZED_KEYS):
+            with open(AUTHORIZED_KEYS, "r") as f:
+               existing_keys = f.read().splitlines()
+
+        if pub_key.strip() not in existing_keys:
+            with open(AUTHORIZED_KEYS, "a") as f:
+                f.write(pub_key.strip() + "\n")
 
         # 2. Zaktualizuj licznik portów
         with open(PORT_FILE, "w") as f:

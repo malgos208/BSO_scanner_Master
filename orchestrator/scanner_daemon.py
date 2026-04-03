@@ -26,7 +26,7 @@ LAST_SCANS = {}
 
 def get_target_from_config(customer_name):
     try:
-        with open("config.yaml", "r") as f:
+        with open("/app/config/config.yaml", "r") as f:
             config = yaml.safe_load(f) or {}
             return config.get(customer_name)
     except Exception as e:
