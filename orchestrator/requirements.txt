@@ -1,3 +1,4 @@
 python-gvm
 pyyaml
 flask
+lxml

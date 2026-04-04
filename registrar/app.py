@@ -7,14 +7,14 @@ from gvm.transforms import EtreeCheckCommandTransform
 app = Flask(__name__)
 
 # Ścieżki zgodne z Twoim montowaniem wolumenów w docker-compose
-PORT_FILE = "/app/ports.txt"
-CONFIG_FILE = "/app/config.yaml"
+PORT_FILE = "/app/shared_config/ports.txt"
+CONFIG_FILE = "/app/shared_config/config.yaml"
+AUTHORIZED_KEYS = "/config/.ssh/authorized_keys"
+
+SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"
 
 GVM_HOST = "127.0.0.1"
 GVM_PORT = 9390
-
-SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"  # OpenVAS Default
-CONFIG_ID = "daba56c8-73ec-11df-a475-002264764cea"   # Full and Fast
 
 def get_next_port():
     default_port = 9001
@@ -41,12 +41,11 @@ def register():
         port = get_next_port()
 
         # 1. Zapisz klucz dla tunnel-server
-        AUTHORIZED_KEYS = "/config/.ssh/authorized_keys"
         existing_keys = []
 
         if os.path.exists(AUTHORIZED_KEYS):
             with open(AUTHORIZED_KEYS, "r") as f:
-               existing_keys = f.read().splitlines()
+                existing_keys = f.read().splitlines()
 
         if pub_key.strip() not in existing_keys:
             with open(AUTHORIZED_KEYS, "a") as f:
@@ -87,6 +86,30 @@ def register():
 
     except Exception as e:
         return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/ingest', methods=['POST'])
+def ingest():
+    data = request.json
+
+    sensor = data.get("sensor")
+    hosts = data.get("hosts", [])
+
+    if not sensor or not hosts:
+        return jsonify({"status": "error"}), 400
+
+    config = {}
+
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            config = yaml.safe_load(f) or {}
+
+    # zapisujemy hosty jako targety
+    config[sensor] = hosts
+
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config, f)
+
+    return jsonify({"status": "ok", "stored": len(hosts)})
 
 if __name__ == '__main__':
     # Flask musi słuchać na 0.0.0.0 wewnątrz kontenera

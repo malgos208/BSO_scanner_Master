@@ -4,7 +4,7 @@ services:
     image: immauss/openvas:latest
     container_name: openvas-master
     privileged: true
-    network_mode: host # Wymagane dla pełnej funkcjonalności skanera
+    network_mode: host
     restart: unless-stopped
     volumes:
       - openvas_data:/data
@@ -25,12 +25,10 @@ services:
       - LISTEN_PORT=2222
 #      - PUBLIC_KEY_FILE=/config/authorized_keys
       - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel
-#    ports:
-#      - "2222:2222"
+      - ALLOW_TCP_FORWARDING=true
+      - GATEWAY_PORTS=true
     volumes:
-    # tylko klucz, NIE cały .ssh
-#      - ./remote_keys/authorized_keys:/config/authorized_keys
-       - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
+      - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
     restart: unless-stopped
 
   # 3. API Rejestrujące (Dodaje skanery i aktualizuje config)
@@ -42,13 +40,10 @@ services:
       - GVM_USER=admin
       - GVM_PASS=admin123
       - GVM_HOST=127.0.0.1
-    ports:
-      - "5000:5000" # Port API rejestratora
     volumes:
       - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
-#      - ./remote_keys/authorized_keys:/config/authorized_keys
-      - ./shared_config/config.yaml:/app/config.yaml
-      - ./shared_config/ports.txt:/app/ports.txt
+
+      - ./shared_config:/app/shared_config # config.yaml i ports.txt
     depends_on:
       - openvas-master
 
@@ -63,7 +58,7 @@ services:
       - GVM_HOST=127.0.0.1
     volumes:
       - ./orchestrator/reports:/app/reports
-      - ./shared_config:/app/config
+      - ./shared_config:/app/shared_config
     restart: unless-stopped
     depends_on:
       - registrar
