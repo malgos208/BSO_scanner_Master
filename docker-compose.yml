@@ -40,6 +40,8 @@ services:
       - GVM_USER=${GVM_USER}
       - GVM_PASS=${GVM_PASS}
       - GVM_HOST=127.0.0.1
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
     volumes:
       - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
 
@@ -56,6 +58,8 @@ services:
       - GVM_USER=${GVM_USER}
       - GVM_PASS=${GVM_PASS}
       - GVM_HOST=127.0.0.1
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
     volumes:
       - ./orchestrator/reports:/app/reports
       - ./shared_config:/app/shared_config
@@ -72,7 +76,8 @@ services:
       - SMTP_USER=${SMTP_USER}
       - SMTP_PASS=${SMTP_PASS}
       - EMAIL_RECEIVER=${EMAIL_RECEIVER}
-
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
     volumes:
       - ./orchestrator/reports:/app/reports
 

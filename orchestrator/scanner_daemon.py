@@ -20,6 +20,10 @@ GVM_PASS = os.getenv("GVM_PASS")
 SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"
 FULL_AND_FAST_CONFIG_ID = "daba56c8-73ec-11df-a475-002264764cea"
 DISCOVERY_CONFIG_ID = "8715c877-47a0-438d-98a3-27c7a6ab2196"
+
+#!!!DO TESTOWANIA
+FULL_AND_FAST_CONFIG_ID = DISCOVERY_CONFIG_ID
+
 TCP_PORT_LIST_ID = "33d0cd82-57c6-11e1-8ed1-406186ea4fc5" #All IANA assigned TCP
 TCP_UDP_PORT_LIST_ID = "4a4717fe-57d2-11e1-9a26-406186ea4fc5" #All IANA assigned TCP and UDP
 ALL_PORT_LIST_ID = "730ef368-57e2-11e1-a90f-406186ea4fc5" #All TCP and Nmap top 100 UDP
@@ -56,14 +60,14 @@ def save_report_to_outbox(customer_name, report_pdf, report_xml):
                 with open(pdf_path, "wb") as f:
                     f.write(pdf_bytes)
 
-                print(f"📄 Saved PDF: {pdf_path}")
+                print(f"📄 Zapisano PDF: {pdf_path}")
                 pdf_ok = True
 
             except Exception as e:
                 print(f"❌ Nie udało się zapisać PDF: {e}")
 
     except Exception as e:
-        print(f"❌ PDF processing error: {e}")
+        print(f"❌ Błąd przetwarzania PDF: {e}")
 
     # =========================
     # XML PROCESSING
@@ -79,14 +83,14 @@ def save_report_to_outbox(customer_name, report_pdf, report_xml):
             with open(xml_path, "w", encoding="utf-8") as f:
                 f.write(content_xml)
 
-            print(f"📄 Saved XML: {xml_path}")
+            print(f"📄 Zapisano XML: {xml_path}")
             xml_ok = True
 
         except Exception as e:
-            print(f"❌ Failed to save XML: {e}")
+            print(f"❌ Błąd zapisu XML: {e}")
 
     except Exception as e:
-        print(f"❌ XML processing error: {e}")
+        print(f"❌ Błąd przetwarzania XML: {e}")
 
 
 def extract_ips(hosts_data):
@@ -110,7 +114,7 @@ def extract_ips(hosts_data):
 
 def run_customer_scan(gmp, customer_name, ips):
     # Używamy poprawionego datetime.now()
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
         print(f"🚀 Inicjowanie skanu dla: {customer_name} na adresach: {ips}")
@@ -163,7 +167,7 @@ def run_customer_scan(gmp, customer_name, ips):
 # DAEMON LOOP
 # =========================
 def run_daemon():
-    print("🤖 Scanner Daemon started")
+    print("🤖 Scanner Daemon start...")
 
     while True:
         try:

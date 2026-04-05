@@ -31,7 +31,7 @@ def send_and_archive():
         except Exception:
             customer_name = "Nieznany"
 
-        print(f"📬 Processing: {file_name} for customer: {customer_name}")
+        print(f"📬 Przetwarzanie: {file_name} dla klienta: {customer_name}")
 
         # 2. Wysyłka E-mail
         success = send_email(file_path, customer_name)
@@ -44,13 +44,13 @@ def send_and_archive():
             # 4. Przeniesienie pliku (Backup)
             dest_path = os.path.join(customer_backup_dir, file_name)
             shutil.move(file_path, dest_path)
-            print(f"📁 Archived: {dest_path}")
+            print(f"📁 Zarchiwizowano: {dest_path}")
         else:
-            print(f"⚠️ Error sending {file_name} - will try again in the next loop.")
+            print(f"⚠️ Błąd wysyłania {file_name} - ponowna próba w kolejnej iteracji.")
 
 def send_email(file_path, customer_name):
     file_name = os.path.basename(file_path)
-    print(f"📧 Processing report: {file_name}")
+    print(f"📧 Przetwarzanie raportu: {file_name}")
     
     msg = MIMEMultipart()
     msg['From'] = SMTP_USER
@@ -75,11 +75,11 @@ def send_email(file_path, customer_name):
         server.quit()
         return True
     except Exception as e:
-        print(f"❌ Error sending {file_name}: {e}")
+        print(f"❌ Błąd wysyłania {file_name}: {e}")
         return False
 
 if __name__ == "__main__":
-    print("Mailer Daemon started...")
+    print("Mailer Daemon start...")
 
     while True:
         os.makedirs(OUTBOX_DIR, exist_ok=True)
