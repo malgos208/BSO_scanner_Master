@@ -143,7 +143,13 @@ def run_customer_scan(gmp, customer_name, ips):
         while True:
             t = gmp.get_task(task_id)
             status = t.find("task/status").text
-            print(f"⏳ [{customer_name}] Status: {status}")
+            
+            if status == "Running":
+                progress = t.find("progress").text if t.find("progress") is not None else "N/A"
+                print(f"⏳ [{customer_name}] Status: {status} | {progress}%")
+            else:
+                print(f"📌 [{customer_name}] Status: {status}")
+
             if status in ["Done", "Stopped", "Error"]:
                 break
             time.sleep(60)
