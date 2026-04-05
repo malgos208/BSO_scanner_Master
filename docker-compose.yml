@@ -9,7 +9,7 @@ services:
     volumes:
       - openvas_data:/data
     environment:
-      - PASSWORD=admin123 # Hasło dla użytkownika admin w GVM
+      - PASSWORD=${GVM_PASS} # Hasło dla użytkownika admin w GVM
 
   # 2. Serwer SSH (Tunele dla sensorów)
   tunnel-server:
@@ -37,8 +37,8 @@ services:
     container_name: registrar
     network_mode: host
     environment:
-      - GVM_USER=admin
-      - GVM_PASS=admin123
+      - GVM_USER=${GVM_USER}
+      - GVM_PASS=${GVM_PASS}
       - GVM_HOST=127.0.0.1
     volumes:
       - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
@@ -47,14 +47,14 @@ services:
     depends_on:
       - openvas-master
 
-  # 4. Orchestrator (Demon wysyłający raporty)
+  # 4. Orchestrator (Daemon wykonujący skany)
   orchestrator:
     build: ./orchestrator
     container_name: scan-orchestrator
     network_mode: host
     environment:
-      - GVM_USER=admin
-      - GVM_PASS=admin123
+      - GVM_USER=${GVM_USER}
+      - GVM_PASS=${GVM_PASS}
       - GVM_HOST=127.0.0.1
     volumes:
       - ./orchestrator/reports:/app/reports
@@ -62,6 +62,19 @@ services:
     restart: unless-stopped
     depends_on:
       - registrar
+
+  # 4. Mailer (Demon wysyłający raporty)
+  mailer:
+    build: ./mailer
+    container_name: report-mailer
+    restart: unless-stopped
+    environment:
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_RECEIVER=${EMAIL_RECEIVER}
+
+    volumes:
+      - ./orchestrator/reports:/app/reports
 
 volumes:
   openvas_data:

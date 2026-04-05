@@ -3,6 +3,7 @@ import os, yaml
 from gvm.connections import TLSConnection
 from gvm.protocols.gmp import Gmp
 from gvm.transforms import EtreeCheckCommandTransform
+from gvm.protocols.gmpv208.entities import ScannerType
 
 app = Flask(__name__)
 
@@ -15,102 +16,75 @@ SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"
 
 GVM_HOST = "127.0.0.1"
 GVM_PORT = 9390
+GVM_USER = os.getenv("GVM_USER")
+GVM_PASS = os.getenv("GVM_PASS")
 
 def get_next_port():
-    default_port = 9001
-    if not os.path.exists(PORT_FILE):
-        return default_port
-    try:
+    port = 9000
+    if os.path.exists(PORT_FILE):
         with open(PORT_FILE, "r") as f:
-            content = f.read().strip()
-            return int(content) + 1 if content else default_port
-    except (ValueError, FileNotFoundError):
-        return default_port
+            port = int(f.read().strip() or 9000)
+    new_port = port + 1
+    with open(PORT_FILE, "w") as f: f.write(str(new_port))
+    return new_port
 
 @app.route('/register', methods=['POST'])
 def register():
     try:
         data = request.json
-        name = data.get('name')
-        pub_key = data.get('pub_key')
+        name, pub_key = data.get('name'), data.get('pub_key')
         ip_range = data.get('ip_range', '127.0.0.1/32')
 
-        if not name or not pub_key:
-            return jsonify({"status": "error", "message": "Brak nazwy lub klucza"}), 400
+        if not name or not pub_key: return jsonify({"error": "Missing data"}), 400
 
         port = get_next_port()
 
-        # 1. Zapisz klucz dla tunnel-server
-        existing_keys = []
+        # 1. SSH Key
+        os.makedirs(os.path.dirname(AUTHORIZED_KEYS), exist_ok=True)
+        with open(AUTHORIZED_KEYS, "a") as f: f.write(f"\n{pub_key.strip()}")
 
-        if os.path.exists(AUTHORIZED_KEYS):
-            with open(AUTHORIZED_KEYS, "r") as f:
-                existing_keys = f.read().splitlines()
+        # 2. GVM: Tworzenie skanera dedykowanego dla tego Sensora
+        connection = TLSConnection(hostname=GVM_HOST, port=GVM_PORT)
+        with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
+            gmp.authenticate(GVM_USER, GVM_PASS)
+            
+            # GVM będzie łączył się z localhost:PORT, co tunel SSH przekieruje do Sensora
+            scanner_res = gmp.create_scanner(
+                name=f"Scanner_{name}",
+                host="127.0.0.1",
+                port=port,
+                type="OSP"
+            )
+            scanner_id = scanner_res.get('id')
 
-        if pub_key.strip() not in existing_keys:
-            with open(AUTHORIZED_KEYS, "a") as f:
-                f.write(pub_key.strip() + "\n")
-
-        # 2. Zaktualizuj licznik portów
-        with open(PORT_FILE, "w") as f:
-            f.write(str(port))
-
-        # 3. Zaktualizuj config.yaml
+        # 3. Config update
         config = {}
         if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f:
-                config = yaml.safe_load(f) or {}
+            with open(CONFIG_FILE, "r") as f: config = yaml.safe_load(f) or {}
 
-        config[name] = ip_range
+        config[name] = {
+            "range": ip_range,
+            "active_hosts": [],
+            "tunnel_port": port,
+            "scanner_id": scanner_id
+        }
+        with open(CONFIG_FILE, "w") as f: yaml.dump(config, f)
 
-        with open(CONFIG_FILE, "w") as f:
-            yaml.dump(config, f)
-
-        # GVM connection
-        connection = TLSConnection(hostname=GVM_HOST, port=GVM_PORT)
-
-        with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
-            gmp.authenticate(
-                os.getenv("GVM_USER", "admin"),
-                os.getenv("GVM_PASS", "admin123")
-            )
-
-            # test connection
-            gmp.get_scanners()
-
-        return jsonify({
-            "status": "success",
-            "port": port,
-            "scanner_id": SCANNER_ID
-        })
-
+        return jsonify({"status": "success", "port": port, "scanner_id": scanner_id})
     except Exception as e:
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"error": str(e)}), 500
 
 @app.route('/ingest', methods=['POST'])
 def ingest():
     data = request.json
-
-    sensor = data.get("sensor")
-    hosts = data.get("hosts", [])
-
-    if not sensor or not hosts:
-        return jsonify({"status": "error"}), 400
-
-    config = {}
-
-    if os.path.exists(CONFIG_FILE):
-        with open(CONFIG_FILE, "r") as f:
-            config = yaml.safe_load(f) or {}
-
-    # zapisujemy hosty jako targety
-    config[sensor] = hosts
-
-    with open(CONFIG_FILE, "w") as f:
-        yaml.dump(config, f)
-
-    return jsonify({"status": "ok", "stored": len(hosts)})
+    name, hosts = data.get("sensor"), data.get("hosts", [])
+    if not name: return jsonify({"error": "No sensor name"}), 400
+    
+    with open(CONFIG_FILE, "r") as f: config = yaml.safe_load(f) or {}
+    if name in config:
+        config[name]["active_hosts"] = hosts
+        with open(CONFIG_FILE, "w") as f: yaml.dump(config, f)
+    return jsonify({"status": "ok"})
 
 if __name__ == '__main__':
-    # Flask musi słuchać na 0.0.0.0 wewnątrz kontenera
     app.run(host='0.0.0.0', port=5000)

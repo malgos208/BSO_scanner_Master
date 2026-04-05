@@ -1,34 +1,20 @@
-import time
 import os
-import base64
-import smtplib
-import yaml
+import time, datetime
 import re
+import base64
+import yaml
 from lxml import etree
-from datetime import datetime
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
-
 from gvm.connections import TLSConnection
 from gvm.protocols.gmp import Gmp
 from gvm.transforms import EtreeCheckCommandTransform
-
 
 # =========================
 # CONFIG
 # =========================
 GVM_HOST = "127.0.0.1"
 GVM_PORT = 9390
-GVM_USER = os.getenv("GVM_USER", "admin")
-GVM_PASS = os.getenv("GVM_PASS", "admin123")
-
-SMTP_SERVER = "smtp.gmail.com"
-SMTP_PORT = 587
-SMTP_USER = "mainpublictenders@gmail.com"
-SMTP_PASS = "xbzm urdr xswq priy"
-EMAIL_RECEIVER = "Diabolina208@wp.pl"
+GVM_USER = os.getenv("GVM_USER")
+GVM_PASS = os.getenv("GVM_PASS")
 
 #SCANNER_ID = "6acd0832-df90-11e4-b9d5-28d24461215b"
 SCANNER_ID = "08b69003-5fc2-4037-a479-93b440211c73"
@@ -40,161 +26,144 @@ ALL_PORT_LIST_ID = "730ef368-57e2-11e1-a90f-406186ea4fc5" #All TCP and Nmap top 
 
 REPORT_FORMAT_PDF = "c402cc3e-b531-11e1-9163-406186ea4fc5"
 REPORT_FORMAT_XML = "a994b278-1f62-11e1-96ac-406186ea4fc5"
+
 CONFIG_PATH = "/app/shared_config/config.yaml"
+OUTBOX_DIR = "/app/reports/outbox"
 
-# =========================
-# EMAIL
-# =========================
-def send_email(customer_name, file_path):
-    print(f"📧 Sending email for {customer_name}")
 
-    msg = MIMEMultipart()
-    msg["From"] = SMTP_USER
-    msg["To"] = EMAIL_RECEIVER
-    msg["Subject"] = f"🔴 Vulnerability Report: {customer_name} ({datetime.now().date()})"
+def save_report_to_outbox(customer_name, report_pdf, report_xml):
+    os.makedirs(OUTBOX_DIR, exist_ok=True)
 
-    msg.attach(MIMEText("Scan completed. Report attached.", "plain"))
+    timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    with open(file_path, "rb") as f:
-        part = MIMEBase("application", "octet-stream")
-        part.set_payload(f.read())
-        encoders.encode_base64(part)
-        part.add_header(
-            "Content-Disposition",
-            f"attachment; filename={os.path.basename(file_path)}"
+    pdf_path = os.path.join(OUTBOX_DIR, f"{customer_name}_{timestamp}.pdf")
+    xml_path = os.path.join(OUTBOX_DIR, f"{customer_name}_{timestamp}.xml")
+
+    # =========================
+    # PDF PROCESSING
+    # =========================
+    try:
+        pdf_node = report_pdf.find(".//report")
+
+        if pdf_node is None or not pdf_node.text:
+            print("❌ Brak zawartości PDF w raporcie")
+        else:
+            content_pdf = pdf_node.text.strip()
+
+            try:
+                pdf_bytes = base64.b64decode(content_pdf)
+
+                with open(pdf_path, "wb") as f:
+                    f.write(pdf_bytes)
+
+                print(f"📄 Saved PDF: {pdf_path}")
+                pdf_ok = True
+
+            except Exception as e:
+                print(f"❌ Nie udało się zapisać PDF: {e}")
+
+    except Exception as e:
+        print(f"❌ PDF processing error: {e}")
+
+    # =========================
+    # XML PROCESSING
+    # =========================
+    try:
+        content_xml = etree.tostring(
+            report_xml,
+            encoding='unicode',
+            pretty_print=True
         )
-        msg.attach(part)
 
-    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT) as server:
-        server.starttls()
-        server.login(SMTP_USER, SMTP_PASS)
-        server.send_message(msg)
+        try:
+            with open(xml_path, "w", encoding="utf-8") as f:
+                f.write(content_xml)
 
-    print("✅ Email sent")
+            print(f"📄 Saved XML: {xml_path}")
+            xml_ok = True
+
+        except Exception as e:
+            print(f"❌ Failed to save XML: {e}")
+
+    except Exception as e:
+        print(f"❌ XML processing error: {e}")
 
 
-# =========================
-# SCAN PIPELINE
-# =========================
-def run_customer_scan(gmp, customer_name, hosts):
+def extract_ips(hosts_data):
+    """
+    Wyciąga adresy IP z listy lub stringa.
+    """
+    if not hosts_data:
+        return []
+    
+    # Jeśli dostaliśmy listę (np. z config[sensor]['active_hosts'])
+    if isinstance(hosts_data, list):
+        clean_ips = []
+        for h in hosts_data:
+            match = re.search(r"\d+\.\d+\.\d+\.\d+", str(h))
+            if match:
+                clean_ips.append(match.group(0))
+        return clean_ips
 
+    # Jeśli dostaliśmy stringa (fallback)
+    return re.findall(r"\d+\.\d+\.\d+\.\d+", str(hosts_data))
+
+def run_customer_scan(gmp, customer_name, ips, scanner_id):
+    # Używamy poprawionego datetime.now()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    print(f"🚀 Scan: {customer_name} -> {hosts}")
+    try:
+        print(f"🚀 Inicjowanie skanu dla: {customer_name} na adresach: {ips} \n dla skanera {scanner_id}")
 
-    # CREATE TARGET
-    target = gmp.create_target(
-        name=f"Target_{customer_name}_{timestamp}",
-        hosts=hosts,
-        port_list_id=TCP_PORT_LIST_ID,
-        alive_test="Consider Alive"
-    )
+        # 1. CREATE TARGET
+        target = gmp.create_target(
+            name=f"Tgt_{customer_name}_{timestamp}",
+            hosts=ips,
+            port_list_id=TCP_PORT_LIST_ID,
+            alive_test="Consider Alive"
+        )
+        target_id = target.get("id")
 
-    target_id = target.get("id")
-    print(f"✅ Target created: {target_id}")
+        # 2. CREATE TASK
+        task = gmp.create_task(
+            name=f"Task_{customer_name}_{timestamp}",
+            config_id=FULL_AND_FAST_CONFIG_ID,
+            target_id=target_id,
+            scanner_id=scanner_id
+        )
+        task_id = task.get("id")
 
-    # CREATE TASK
-    task = gmp.create_task(
-        name=f"Task_{customer_name}_{timestamp}",
-        config_id=FULL_AND_FAST_CONFIG_ID,
-        target_id=target_id,
-        scanner_id=SCANNER_ID
-    )
+        # 3. START & WAIT
+        gmp.start_task(task_id)
+        
+        while True:
+            t = gmp.get_task(task_id)
+            status = t.find("task/status").text
+            print(f"⏳ [{customer_name}] Status: {status}")
+            if status in ["Done", "Stopped", "Error"]:
+                break
+            time.sleep(60)
 
-    task_id = task.get("id")
-    print(f"✅ Task created: {task_id}")
+        # 4. FETCH & SAVE (PDF + XML)
+        report_id = gmp.get_task(task_id).find("task/last_report/report").get("id")
+        
+        report_pdf = gmp.get_report(report_id=report_id, report_format_id=REPORT_FORMAT_PDF,
+                                    ignore_pagination=True, filter_string="levels=hmlog rows=-1")
+        
+        report_xml = gmp.get_report(report_id=report_id, report_format_id=REPORT_FORMAT_XML,
+                                    filter_string="levels=hmlog rows=-1")
 
-    # START TASK
-    gmp.start_task(task_id)
-    print("▶️ Scan started")
+        save_report_to_outbox(customer_name, report_pdf, report_xml)
+        print(f"✅ Skan zakończony, raporty zapisane dla {customer_name}")
 
-    # WAIT
-    while True:
-        t = gmp.get_task(task_id)
-        status = t.find("task/status").text
-
-        print(f"⏳ Status: {status}")
-
-        if status in ["Done", "Stopped", "Error"]:
-            break
-
-        time.sleep(10)
-
-    # REPORT
-    task = gmp.get_task(task_id)
-    report_node = task.find("task/last_report/report")
-
-    if report_node is None:
-        print("❌ No report found")
-        return
-
-    report_id = report_node.get("id")
-    print(f"📄 Report ID: {report_id}")
-
-    reportPDF = gmp.get_report(
-        report_id=report_id,
-        report_format_id=REPORT_FORMAT_PDF,
-        ignore_pagination=True,
-        filter_string="levels=hmlog rows=-1 min_qod=0"
-    )
-
-    reportXML = gmp.get_report(
-        report_id=report_id,
-        report_format_id=REPORT_FORMAT_XML,
-        filter_string="levels=hmlog rows=-1 min_qod=0"
-    )
-
-    content_PDF = reportPDF.find(".//report").text
-    content_XML = etree.tostring(reportXML, encoding='unicode', pretty_print=True)
-
-    os.makedirs("/app/reports", exist_ok=True)
-
-    PDF_path = f"/app/reports/{customer_name}_{timestamp}.pdf"
-    XML_path = f"/app/reports/{customer_name}_{timestamp}.xml"
-
-    with open(PDF_path, "wb") as f:
-        f.write(base64.b64decode(content_PDF))
-    print(f"📄 Saved: {PDF_path}")
-
-
-    with open(XML_path, "w", encoding="utf-8") as f:
-        f.write(content_XML)
-    print(f"📄 Saved: {XML_path}")
-
-    send_email(customer_name, PDF_path)
+    except Exception as e:
+        print(f"💥 Błąd podczas skanowania {customer_name}: {e}")
 
 # =========================
-# EXTRACT IPS
-# =========================
-def extract_ips(hosts):
-    """
-    Returns ALL valid IPs found in hosts list.
-    """
-
-    if not hosts:
-        return []
-
-    if isinstance(hosts, str):
-        hosts = [hosts]
-
-    ips = []
-
-    for h in hosts:
-        if not h:
-            continue
-
-        match = re.search(r"\d+\.\d+\.\d+\.\d+", str(h))
-        if match:
-            ips.append(match.group(0))
-
-    return ips
-
-# =========================
-# DAEMON
+# DAEMON LOOP
 # =========================
 def run_daemon():
-
-    print("🤖 Master scan daemon started")
+    print("🤖 Scanner Daemon started")
 
     while True:
         try:
@@ -203,30 +172,47 @@ def run_daemon():
             with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
                 gmp.authenticate(GVM_USER, GVM_PASS)
 
-                with open(CONFIG_PATH, "r") as f:
-                    config = yaml.safe_load(f) or {}
+                if not os.path.exists(CONFIG_PATH):
+                    print("⚠️ Brak pliku config.yaml")
+                else:
+                    with open(CONFIG_PATH, "r") as f:
+                        config = yaml.safe_load(f) or {}
 
-                for sensor_name, hosts in config.items():
+                    for customer_name, customer_data in config.items():
+                        active_hosts = customer_data.get("active_hosts", [])
+                        
+                        # Walidacja adresów IP
+                        ips = extract_ips(active_hosts)
+                        scanner_id = customer_data.get("scanner_id")
 
-                    ips = extract_ips(hosts)
+                        if not ips:
+                            print(f"Brak aktywnych hostów dla {customer_name}. Czekam na dane z Sensora.")
+                            continue
 
-                    if not ips:
-                        print(f"⚠️ No valid IPs for {sensor_name}")
-                        continue
-
-                    print(f"🚀 Scanning {sensor_name}: {ips}")
-
-                    run_customer_scan(
-                        gmp,
-                        sensor_name,
-                        ips
-                    )
+                        run_customer_scan(gmp, customer_name, ips, scanner_id)
 
         except Exception as e:
-            print(f"⚠️ Error: {e}")
+            print(f"Błąd pętli głównej: {e}")
 
-        time.sleep(86400) #co 24h
-
+        print("Pętla zakończona. Następne sprawdzenie za 24h...")
+        time.sleep(86400)
 
 if __name__ == "__main__":
     run_daemon()
+
+
+# # orchestrator/scanner_daemon.py (fragment)
+# import threading
+
+# def manage_scan(customer_name, targets):
+#     # Logika run_customer_scan tutaj...
+#     # Po zakończeniu zapisz plik w /app/reports/ready_to_send/
+#     pass
+
+# def main_loop():
+#     while True:
+#         config = load_config() # z shared_config/config.yaml
+#         for customer, data in config.items():
+#             t = threading.Thread(target=manage_scan, args=(customer, data['hosts']))
+#             t.start()
+#         time.sleep(86400) # Skan raz na dobę
