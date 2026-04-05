@@ -2,6 +2,7 @@ import os
 import time, datetime
 import re
 import base64
+import requests
 import yaml
 from lxml import etree
 from gvm.connections import TLSConnection
@@ -31,9 +32,15 @@ ALL_PORT_LIST_ID = "730ef368-57e2-11e1-a90f-406186ea4fc5" #All TCP and Nmap top 
 REPORT_FORMAT_PDF = "c402cc3e-b531-11e1-9163-406186ea4fc5"
 REPORT_FORMAT_XML = "a994b278-1f62-11e1-96ac-406186ea4fc5"
 
-CONFIG_PATH = "/app/shared_config/config.yaml"
+CONFIG_FILE = "/app/shared_config/config.yaml"
 OUTBOX_DIR = "/app/reports/outbox"
 
+def load_config():
+    """Bezpiecznie ładuje plik YAML."""
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            return yaml.safe_load(f) or {}
+    return {}
 
 def save_report_to_outbox(customer_name, report_pdf, report_xml):
     os.makedirs(OUTBOX_DIR, exist_ok=True)
@@ -182,23 +189,48 @@ def run_daemon():
             with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
                 gmp.authenticate(GVM_USER, GVM_PASS)
 
-                if not os.path.exists(CONFIG_PATH):
-                    print("⚠️ Brak pliku config.yaml")
-                else:
-                    with open(CONFIG_PATH, "r") as f:
-                        config = yaml.safe_load(f) or {}
+                config = load_config()
+                for sensor_id, data in config.items():
+                    customer_name = data.get("name", sensor_id)
+                    active_hosts = data.get("active_hosts", [])
 
-                    for customer_name, customer_data in config.items():
-                        active_hosts = customer_data.get("active_hosts", [])
+                    # Jeśli sensor nigdy nic nie wysłał, przyjmij 0
+                    last_known_update = float(data.get("updated_at", 0))
+                    
+                    print(f"📡 [1/2] Wysyłam żądanie discovery dla {customer_name} ({sensor_id})...")
+                    # Wyzwalamy flagę dla Sensora (żeby w /check-tasks dostał True)
+                    requests.post(f"http://app:5000/trigger-discovery/{sensor_id}")
+
+                    # 2. Czekaj na zmianę timestampu w pliku config.yaml
+                    fresh_data_arrived = False
+                    
+                    # max 3 minuty (18 prób co 10 sekund)
+                    for _ in range(18):
+                        time.sleep(10)
                         
-                        # Walidacja adresów IP
-                        ips = extract_ips(active_hosts)
+                        current_config = load_config()
+                        current_sensor_data = current_config.get(sensor_id, {})
+                        current_update_time = float(current_sensor_data.get("updated_at", 0))
 
-                        if not ips:
-                            print(f"Brak aktywnych hostów dla {customer_name}. Czekam na dane z Sensora.")
-                            continue
+                        # Jeśli czas w pliku jest większy niż ten, który znaliśmy na początku
+                        if current_update_time > last_known_update:
+                            print(f"✅ Otrzymano świeże dane ({current_update_time}).")
+                            fresh_data_arrived = True
+                            active_hosts = current_sensor_data.get("active_hosts", [])
+                            break
+                    
+                    # 3. Decyzja: Skanujemy na nowych, starych, czy wcale?
+                    if not fresh_data_arrived:
+                        print(f"⚠️ Sensor {customer_name} ({sensor_id}) nie odpowiedział na czas. Używam ostatniej znanej listy hostów ")
+                    
+                    # Walidacja adresów IP
+                    ips = extract_ips(active_hosts)
 
-                        run_customer_scan(gmp, customer_name, ips)
+                    if not ips:
+                        print(f"Brak aktywnych hostów dla {customer_name}. Czekam na dane z Sensora.")
+                        continue
+
+                    run_customer_scan(gmp, customer_name, ips)
 
         except Exception as e:
             print(f"Błąd pętli głównej: {e}")
