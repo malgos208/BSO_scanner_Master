@@ -9,4 +9,4 @@ WORKDIR /app
 COPY mailer_daemon.py .
 
 # Uruchomienie skryptu
-CMD ["python", "mailer_daemon.py"]
+CMD ["python", "-u", "mailer_daemon.py"]

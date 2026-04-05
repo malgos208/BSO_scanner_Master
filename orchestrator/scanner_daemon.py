@@ -199,7 +199,7 @@ def run_daemon():
                     
                     print(f"📡 [1/2] Wysyłam żądanie discovery dla {customer_name} ({sensor_id})...")
                     # Wyzwalamy flagę dla Sensora (żeby w /check-tasks dostał True)
-                    requests.post(f"http://app:5000/trigger-discovery/{sensor_id}")
+                    requests.post(f"http://127.0.0.1:5000/trigger-discovery/{sensor_id}")
 
                     # 2. Czekaj na zmianę timestampu w pliku config.yaml
                     fresh_data_arrived = False

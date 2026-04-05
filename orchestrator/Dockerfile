@@ -15,4 +15,4 @@ COPY scanner_daemon.py .
 
 RUN mkdir /app/reports
 
-CMD ["sh", "-c", "echo 'START ORCHESTRATOR' && ls -la /app && python scanner_daemon.py"]
+CMD ["python", "-u", "scanner_daemon.py"]
