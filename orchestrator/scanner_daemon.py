@@ -108,12 +108,12 @@ def extract_ips(hosts_data):
     # Jeśli dostaliśmy stringa (fallback)
     return re.findall(r"\d+\.\d+\.\d+\.\d+", str(hosts_data))
 
-def run_customer_scan(gmp, customer_name, ips, scanner_id):
+def run_customer_scan(gmp, customer_name, ips):
     # Używamy poprawionego datetime.now()
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     try:
-        print(f"🚀 Inicjowanie skanu dla: {customer_name} na adresach: {ips} \n dla skanera {scanner_id}")
+        print(f"🚀 Inicjowanie skanu dla: {customer_name} na adresach: {ips}")
 
         # 1. CREATE TARGET
         target = gmp.create_target(
@@ -129,7 +129,7 @@ def run_customer_scan(gmp, customer_name, ips, scanner_id):
             name=f"Task_{customer_name}_{timestamp}",
             config_id=FULL_AND_FAST_CONFIG_ID,
             target_id=target_id,
-            scanner_id=scanner_id
+            scanner_id=SCANNER_ID
         )
         task_id = task.get("id")
 
@@ -183,13 +183,12 @@ def run_daemon():
                         
                         # Walidacja adresów IP
                         ips = extract_ips(active_hosts)
-                        scanner_id = customer_data.get("scanner_id")
 
                         if not ips:
                             print(f"Brak aktywnych hostów dla {customer_name}. Czekam na dane z Sensora.")
                             continue
 
-                        run_customer_scan(gmp, customer_name, ips, scanner_id)
+                        run_customer_scan(gmp, customer_name, ips)
 
         except Exception as e:
             print(f"Błąd pętli głównej: {e}")

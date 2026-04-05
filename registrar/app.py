@@ -3,7 +3,6 @@ import os, yaml
 from gvm.connections import TLSConnection
 from gvm.protocols.gmp import Gmp
 from gvm.transforms import EtreeCheckCommandTransform
-from gvm.protocols.gmpv208.entities import ScannerType
 
 app = Flask(__name__)
 
@@ -20,71 +19,102 @@ GVM_USER = os.getenv("GVM_USER")
 GVM_PASS = os.getenv("GVM_PASS")
 
 def get_next_port():
-    port = 9000
+    """Pobiera następny wolny port i aktualizuje licznik."""
+    default_port = 9000
+    port = default_port
+    
     if os.path.exists(PORT_FILE):
-        with open(PORT_FILE, "r") as f:
-            port = int(f.read().strip() or 9000)
+        try:
+            with open(PORT_FILE, "r") as f:
+                content = f.read().strip()
+                if content:
+                    port = int(content)
+        except ValueError:
+            pass
+    
     new_port = port + 1
-    with open(PORT_FILE, "w") as f: f.write(str(new_port))
+    with open(PORT_FILE, "w") as f:
+        f.write(str(new_port))
     return new_port
+
+def load_config():
+    """Bezpiecznie ładuje plik YAML."""
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+def save_config(config):
+    """Zapisuje plik YAML."""
+    with open(CONFIG_FILE, "w") as f:
+        yaml.dump(config, f, default_flow_style=False)
 
 @app.route('/register', methods=['POST'])
 def register():
     try:
         data = request.json
-        name, pub_key = data.get('name'), data.get('pub_key')
+        name = data.get('name')
+        pub_key = data.get('pub_key')
         ip_range = data.get('ip_range', '127.0.0.1/32')
 
-        if not name or not pub_key: return jsonify({"error": "Missing data"}), 400
+        if not name or not pub_key:
+            return jsonify({"status": "error", "message": "Brak nazwy klienta lub klucza publicznego"}), 400
 
+        # 1. Zarządzanie portami i SSH
         port = get_next_port()
+        
+        if os.path.exists(AUTHORIZED_KEYS):
+            with open(AUTHORIZED_KEYS, "r") as f:
+                if pub_key.strip() not in f.read():
+                    with open(AUTHORIZED_KEYS, "a") as fa:
+                        fa.write(f"\n{pub_key.strip()}")
+        else:
+            os.makedirs(os.path.dirname(AUTHORIZED_KEYS), exist_ok=True)
+            with open(AUTHORIZED_KEYS, "w") as f:
+                f.write(pub_key.strip())
 
-        # 1. SSH Key
-        os.makedirs(os.path.dirname(AUTHORIZED_KEYS), exist_ok=True)
-        with open(AUTHORIZED_KEYS, "a") as f: f.write(f"\n{pub_key.strip()}")
-
-        # 2. GVM: Tworzenie skanera dedykowanego dla tego Sensora
-        connection = TLSConnection(hostname=GVM_HOST, port=GVM_PORT)
-        with Gmp(connection, transform=EtreeCheckCommandTransform()) as gmp:
-            gmp.authenticate(GVM_USER, GVM_PASS)
-            
-            # GVM będzie łączył się z localhost:PORT, co tunel SSH przekieruje do Sensora
-            scanner_res = gmp.create_scanner(
-                name=f"Scanner_{name}",
-                host="127.0.0.1",
-                port=port,
-                type="OSP"
-            )
-            scanner_id = scanner_res.get('id')
-
-        # 3. Config update
-        config = {}
-        if os.path.exists(CONFIG_FILE):
-            with open(CONFIG_FILE, "r") as f: config = yaml.safe_load(f) or {}
-
+        # 2. Aktualizacja strukturalnego config.yaml
+        config = load_config()
+        
+        # Jeśli klient już istniał, zachowujemy jego stare hosty, aktualizujemy tylko resztę
+        existing_hosts = config.get(name, {}).get('active_hosts', [])
+        
         config[name] = {
-            "range": ip_range,
-            "active_hosts": [],
+            "range": ip_range,          # Zakres wpisany "z ręki" przy instalacji
+            "active_hosts": existing_hosts, # Tu trafią dane z /ingest
             "tunnel_port": port,
-            "scanner_id": scanner_id
+            "created_at": str(os.times()[4]) # Opcjonalnie: timestamp
         }
-        with open(CONFIG_FILE, "w") as f: yaml.dump(config, f)
+        
+        save_config(config)
 
-        return jsonify({"status": "success", "port": port, "scanner_id": scanner_id})
+        return jsonify({
+            "status": "success",
+            "port": port,
+            "scanner_id": SCANNER_ID
+        })
+
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/ingest', methods=['POST'])
 def ingest():
     data = request.json
-    name, hosts = data.get("sensor"), data.get("hosts", [])
-    if not name: return jsonify({"error": "No sensor name"}), 400
-    
-    with open(CONFIG_FILE, "r") as f: config = yaml.safe_load(f) or {}
-    if name in config:
-        config[name]["active_hosts"] = hosts
-        with open(CONFIG_FILE, "w") as f: yaml.dump(config, f)
-    return jsonify({"status": "ok"})
+    sensor_name = data.get("sensor")
+    new_hosts = data.get("hosts", [])
+
+    if not sensor_name:
+        return jsonify({"status": "error", "message": "Brak nazwy sensora"}), 400
+
+    config = load_config()
+
+    if sensor_name in config:
+        # Aktualizujemy tylko listę aktywnych hostów
+        config[sensor_name]["active_hosts"] = new_hosts
+        save_config(config)
+        return jsonify({"status": "ok", "message": f"Zaktualizowano {len(new_hosts)} hostów"})
+    else:
+        return jsonify({"status": "error", "message": "Sensor nie jest zarejestrowany"}), 404
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000)
