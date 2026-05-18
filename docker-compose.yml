@@ -1,0 +1,84 @@
+services:
+  # 1. Główny silnik OpenVAS (Greenbone)
+  openvas-master:
+    image: immauss/openvas:latest
+    container_name: openvas-master
+    privileged: true
+    network_mode: host
+    restart: unless-stopped
+    volumes:
+      - openvas_data:/data
+    environment:
+      - PASSWORD=${GVM_PASS} # Hasło dla użytkownika admin w GVM
+
+  # 2. Serwer SSH (Tunele dla sensorów)
+  tunnel-server:
+    image: linuxserver/openssh-server:latest
+    container_name: tunnel-server
+    network_mode: host
+    environment:
+      - PUID=1000
+      - PGID=1000
+      - USER_NAME=scanner_user
+      - PASSWORD_ACCESS=false
+      - SUDO_ACCESS=false
+      - LISTEN_PORT=2222
+      - DOCKER_MODS=linuxserver/mods:openssh-server-ssh-tunnel
+      - ALLOW_TCP_FORWARDING=true
+    volumes:
+      - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
+    restart: unless-stopped
+
+  # 3. API Rejestrujące (Dodaje skanery i aktualizuje config)
+  registrar:
+    build: ./registrar
+    container_name: registrar
+    network_mode: host
+    environment:
+      - GVM_USER=${GVM_USER}
+      - GVM_PASS=${GVM_PASS}
+      - GVM_HOST=127.0.0.1
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      - ./remote_keys/authorized_keys:/config/.ssh/authorized_keys
+      - ./shared_config:/app/shared_config # config.yaml
+    depends_on:
+      - openvas-master
+
+  # 4. Orchestrator (Daemon wykonujący skany)
+  orchestrator:
+    build: ./orchestrator
+    container_name: scan-orchestrator
+    network_mode: host
+    environment:
+      - GVM_USER=${GVM_USER}
+      - GVM_PASS=${GVM_PASS}
+      - GVM_HOST=127.0.0.1
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      - ./orchestrator/reports:/app/reports
+      - ./shared_config:/app/shared_config
+    restart: unless-stopped
+    depends_on:
+      - registrar
+
+  # 4. Mailer (Demon wysyłający raporty)
+  mailer:
+    build: ./mailer
+    container_name: report-mailer
+    restart: unless-stopped
+    environment:
+      - SMTP_USER=${SMTP_USER}
+      - SMTP_PASS=${SMTP_PASS}
+      - EMAIL_RECEIVER=${EMAIL_RECEIVER}
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    volumes:
+      - ./orchestrator/reports:/app/reports
+      - ./shared_config:/app/shared_config:ro
+
+volumes:
+  openvas_data:
+    external: true
